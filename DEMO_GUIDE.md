@@ -42,6 +42,10 @@ chmod +x openobserve
 ZO_ROOT_USER_EMAIL="itzmario133@gmail.com" ZO_ROOT_USER_PASSWORD="Demo@Observe123" ./openobserve
 ```
 
+Two gotchas, verified by testing this directly:
+- **Password policy:** the binary rejects weak passwords (needs upper+lower+digit+special char) and panics on startup if it doesn't pass — `Demo@Observe123` above already satisfies this.
+- **Changing ports:** if you need a non-default HTTP port (e.g. to run alongside the Docker version), also set `ZO_GRPC_PORT` — it defaults to `5081` independently of `ZO_HTTP_PORT`, and leaving it unset causes an internal port collision (`Address already in use`) when you move HTTP onto `5081`.
+
 ## Step 2 — Get your OpenObserve auth token
 
 Docs: https://openobserve.ai/docs/integration/ai/gateways/litellm-proxy/
