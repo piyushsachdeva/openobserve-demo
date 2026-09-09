@@ -1,0 +1,51 @@
+services:
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    container_name: openobserve
+    restart: unless-stopped
+    ports:
+      - "5080:5080"
+    environment:
+      - ZO_ROOT_USER_EMAIL=itzmario133@gmail.com
+      - ZO_ROOT_USER_PASSWORD=Demo@Observe123
+    volumes:
+      - openobserve_data:/data
+
+  litellm-proxy:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: litellm-proxy
+    restart: unless-stopped
+    depends_on:
+      - openobserve
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml
+    environment:
+      - OLLAMA_API_BASE=http://187.77.187.85:11434
+      - OTEL_EXPORTER=otlp_http
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://openobserve:5080/api/default
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/json
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic aXR6bWFyaW8xMzNAZ21haWwuY29tOkRlbW9AT2JzZXJ2ZTEyMw==
+      - OTEL_SERVICE_NAME=litellm-proxy
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    depends_on:
+      - litellm-proxy
+    ports:
+      - "3001:8080"
+    environment:
+      - OPENAI_API_BASE_URL=http://litellm-proxy:4000/v1
+      - OPENAI_API_KEY=sk-1234
+      - WEBUI_AUTH=true
+      - ENABLE_FORWARD_USER_INFO_HEADERS=True
+    volumes:
+      - open_webui_data:/app/backend/data
+
+volumes:
+  openobserve_data:
+  open_webui_data:

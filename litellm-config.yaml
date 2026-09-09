@@ -1,0 +1,15 @@
+model_list:
+  - model_name: qwen2.5:0.5b
+    litellm_params:
+      model: ollama_chat/qwen2.5:0.5b
+      api_base: http://187.77.187.85:11434
+
+litellm_settings:
+  callbacks: ["otel"]
+
+general_settings:
+  user_header_mappings:
+    - header_name: X-OpenWebUI-User-Id
+      litellm_user_role: internal_user
+    - header_name: X-OpenWebUI-User-Email
+      litellm_user_role: customer
