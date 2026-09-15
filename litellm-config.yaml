@@ -3,6 +3,11 @@ model_list:
     litellm_params:
       model: ollama_chat/qwen2.5:0.5b
       api_base: http://187.77.187.85:11434
+  - model_name: qwen2.5:1.5b
+    litellm_params:
+      model: ollama_chat/qwen2.5:1.5b
+      api_base: http://187.77.187.85:11434
+      num_ctx: 8192
 
 litellm_settings:
   callbacks: ["otel"]

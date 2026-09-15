@@ -1,6 +1,6 @@
 # Local LLM Chat + Per-User Observability — Demo Guide
 
-Stack: **Ollama** (on the VM) → **LiteLLM Proxy** (adds tracing) → **Open WebUI** (multi-user chat), traces land in **OpenObserve**.
+Stack: **Ollama** (on the VM) → **LiteLLM Proxy** (adds tracing) → **Open WebUI** (multi-user chat, with a ReelDrop-aware custom model), traces land in **OpenObserve**.
 
 ## Fastest way
 
@@ -17,8 +17,12 @@ That's it — skip to "Verify" below. The rest of this guide is the manual, step
   brew install --cask docker
   open -a Docker
   ```
-  (First launch needs your Mac password once, to finish linking the CLI.)
-- Ollama already running and reachable, with a model pulled (this demo uses `qwen2.5:0.5b` on `187.77.187.85:11434`)
+- Ollama already running and reachable on the VM (`187.77.187.85:11434` in this demo), with both models pulled:
+  ```bash
+  curl -X POST http://187.77.187.85:11434/api/pull -d '{"model": "qwen2.5:0.5b"}'
+  curl -X POST http://187.77.187.85:11434/api/pull -d '{"model": "qwen2.5:1.5b"}'
+  ```
+  `qwen2.5:0.5b` is the "look how small this is" model for the install/platform tour. `qwen2.5:1.5b` is what the ReelDrop support model actually uses — see the gotcha in Step 3 for why size matters here.
 
 ## Step 1 — Start OpenObserve
 
@@ -44,11 +48,11 @@ ZO_ROOT_USER_EMAIL="itzmario133@gmail.com" ZO_ROOT_USER_PASSWORD="Demo@Observe12
 
 Two gotchas, verified by testing this directly:
 - **Password policy:** the binary rejects weak passwords (needs upper+lower+digit+special char) and panics on startup if it doesn't pass — `Demo@Observe123` above already satisfies this.
-- **Changing ports:** if you need a non-default HTTP port (e.g. to run alongside the Docker version), also set `ZO_GRPC_PORT` — it defaults to `5081` independently of `ZO_HTTP_PORT`, and leaving it unset causes an internal port collision (`Address already in use`) when you move HTTP onto `5081`.
+- **Changing ports:** if you need a non-default HTTP port, also set `ZO_GRPC_PORT` — it defaults to `5081` independently of `ZO_HTTP_PORT`, and leaving it unset causes an internal port collision when you move HTTP onto `5081`.
+
+**Known gap:** SLOs don't appear in this build's UI even with `ZO_SLO_ENABLED=true` set (verified — the API confirms the flag is on, but no SLO menu renders, checked on both the open-source and Enterprise binaries). Skip that stop in the platform tour or mention it as an honest limit.
 
 ## Step 2 — Get your OpenObserve auth token
-
-Docs: https://openobserve.ai/docs/integration/ai/gateways/litellm-proxy/
 
 ```bash
 echo -n 'itzmario133@gmail.com:Demo@Observe123' | base64
@@ -68,6 +72,11 @@ model_list:
     litellm_params:
       model: ollama_chat/qwen2.5:0.5b
       api_base: http://187.77.187.85:11434
+  - model_name: qwen2.5:1.5b
+    litellm_params:
+      model: ollama_chat/qwen2.5:1.5b
+      api_base: http://187.77.187.85:11434
+      num_ctx: 8192
 
 litellm_settings:
   callbacks: ["otel"]
@@ -80,7 +89,13 @@ general_settings:
       litellm_user_role: customer
 ```
 
-The `user_header_mappings` block is what makes traces per-user: it tells LiteLLM to read the Open WebUI user's id/email off request headers and attach them to every trace. Docs: https://docs.litellm.ai/docs/tutorials/openweb_ui
+The `user_header_mappings` block is what makes traces per-user: it tells LiteLLM to read the Open WebUI user's id/email off request headers and attach them to every trace.
+
+**Gotcha, found the hard way:** Ollama loads a model with a **4096-token context window by default**, regardless of what the model actually supports (`qwen2.5:1.5b` supports up to 32k). The ReelDrop support system prompt (full product docs, ~4,300 tokens) was silently overflowing that default window, and the model would respond with confident, well-formatted, **completely fabricated** answers — wrong prices, invented features, no error of any kind. `num_ctx: 8192` on the `qwen2.5:1.5b` entry above is what fixes it. Verify the running context window any time with:
+```bash
+curl http://187.77.187.85:11434/api/ps
+```
+Look for `"context_length"` in the response — if it's `4096`, the fix didn't take (usually because the model was already loaded before you restarted the proxy; unload it first with `curl -X POST http://187.77.187.85:11434/api/generate -d '{"model": "qwen2.5:1.5b", "keep_alive": 0}'` and let the next request reload it).
 
 Run it:
 
@@ -102,8 +117,6 @@ docker run -d --name litellm-proxy \
 
 ## Step 4 — Start Open WebUI, pointed at LiteLLM Proxy
 
-Docs: https://openobserve.ai/docs/integration/ai/no-code/openwebui/ and https://docs.litellm.ai/docs/tutorials/openweb_ui
-
 ```bash
 docker run -d --name open-webui \
   -p 3001:8080 \
@@ -116,20 +129,60 @@ docker run -d --name open-webui \
 
 `ENABLE_FORWARD_USER_INFO_HEADERS=True` is required — without it, Open WebUI never sends the user's id/email, and every trace stays anonymous.
 
-(Port 3001 avoids clashing with anything else already using 3000 on your machine — change it if you'd rather use a different port.)
+## Step 5 — Give it ReelDrop's knowledge (the "customer support agent" part)
+
+The goal: a chat model that only answers from ReelDrop's actual docs/pricing/features, so it can act as a support agent for the demo.
+
+**What did NOT work:** attaching a Workspace → Knowledge collection to the model and letting Open WebUI's RAG pipeline retrieve context automatically. A model this small (0.5B–1.5B) doesn't reliably invoke Open WebUI's native-function-calling retrieval tool, so the knowledge base was silently never consulted — the model answered from its own pretraining instead (fabricated ReelDrop prices).
+
+**What worked:** paste the docs directly into the model's **System Prompt**, verbatim, as one block. At ~17KB / ~4,300 tokens this comfortably fits `qwen2.5:1.5b`'s 8192-token context (once fixed per the Step 3 gotcha) with room left for the question and answer.
+
+1. Fetch and clean the source pages (already done — see `reeldrop-knowledge/*.md` in this repo: `pricing.md`, `features.md`, `docs-scheduling-and-account.md`, `docs-dm-automation.md`, `docs-mcp-claude.md`).
+2. Open WebUI → **Workspace → Models → Create**.
+   - Name: `ReelDrop Support`
+   - Base Model: `qwen2.5:1.5b`
+   - System Prompt: an instruction line ("Answer ONLY using the documentation below...") followed by the full contents of all 5 files concatenated.
+   - **Advanced Params → Temperature → Custom → `0.1`.** Default temperature made the model flip between a correct answer and a hallucinated one on the exact same question — grounding a small model needs low temperature, not just the right context in front of it.
+   - Do **not** attach a Knowledge collection to this model (see above — it doesn't help and adds risk of confusing the small model further).
+3. Save. Select the model in a new chat and ask something the docs actually cover, e.g. *"How many Instagram accounts can I connect on the Creator plan, and what does it cost?"* — correct answer: **up to 5 accounts, $29/month or $149/year**.
+
+If you want to demo a *stale knowledge base* failure mode instead of a working support agent, that's a separate, deliberate scenario — see the git history for the `openobserve-demo` repo's earlier support-widget prototype (not part of this stack) for how that was built with a genuinely conflicting pair of documents.
 
 ## Verify
 
-1. Open http://localhost:3001, sign up, chat with `qwen2.5:0.5b`.
+1. Open http://localhost:3001, sign in, chat with `qwen2.5:0.5b` for the "look how fast/small this is" beat, then switch to `ReelDrop Support` for the actual demo questions.
 2. Open http://localhost:5080/web/, go to **Traces**, filter by `service_name = litellm-proxy`.
 3. Click a span — you'll see the model name, prompt/completion token counts, latency, and cost per chat turn.
 4. Open a second browser session (different Open WebUI account) and confirm its requests show up as separate traces — this is the "per-user session" observability piece.
 
-## Viewing per-user token usage in OpenObserve
+## Monitoring customer interactions in OpenObserve
 
-**Per-request detail:** Traces → stream `default` → click any span → **Attributes** tab. You'll see `metadata_user_api_key_end_user_id` (the user's email), plus `gen_ai_usage_input_tokens`, `gen_ai_usage_output_tokens`, `gen_ai_usage_total_tokens`, and `gen_ai_usage_cost` for that single chat turn.
+This is the actual point of the demo: not just that the bot answers correctly, but that every interaction is fully observable — tokens, cost, latency, per user.
 
-**Aggregated per-user table:** Dashboards → New dashboard → Add panel → chart type **Table** → Stream Type `traces`, Stream `default` → click **Custom** (next to SQL/Builder) to unlock manual SQL → paste:
+**Per-request detail:** Traces → stream `default` → click any span with `operation_name = litellm_request` → **Attributes**. Key fields:
+- `metadata_user_api_key_end_user_id` — which user/email made this request
+- `gen_ai_usage_input_tokens`, `gen_ai_usage_output_tokens`, `gen_ai_usage_total_tokens` — token counts
+- `gen_ai_usage_cost` — dollar cost, auto-computed, zero pricing config needed
+- `gen_ai_input_messages` / `gen_ai_output_messages` — the full prompt and completion, for debugging exactly what the model saw and said
+
+**Tokens per second (generation speed):** the child span `raw_gen_ai_request` carries Ollama's own native timing fields:
+- `llm_ollama_chat_eval_count` — output tokens generated
+- `llm_ollama_chat_eval_duration` — time spent generating, in **nanoseconds**
+- `llm_ollama_chat_prompt_eval_count` / `llm_ollama_chat_prompt_eval_duration` — input tokens and prefill time
+- Tokens/sec = `eval_count / (eval_duration / 1e9)`
+
+SQL for a quick tokens/sec view:
+```sql
+SELECT llm_ollama_chat_model as model,
+       llm_ollama_chat_eval_count as output_tokens,
+       llm_ollama_chat_eval_duration / 1e9 as generation_seconds,
+       llm_ollama_chat_eval_count / (llm_ollama_chat_eval_duration / 1e9) as tokens_per_second
+FROM "default"
+WHERE operation_name = 'raw_gen_ai_request'
+ORDER BY _timestamp DESC
+```
+
+**Aggregated per-user table:** Dashboards → New dashboard → Add panel → chart type **Table** → Stream Type `traces`, Stream `default` → **Custom** (next to SQL/Builder) → paste:
 
 ```sql
 SELECT metadata_user_api_key_end_user_id as user_email,
@@ -137,13 +190,20 @@ SELECT metadata_user_api_key_end_user_id as user_email,
        count(*) as requests,
        sum(gen_ai_usage_input_tokens) as input_tokens,
        sum(gen_ai_usage_output_tokens) as output_tokens,
-       sum(gen_ai_usage_total_tokens) as total_tokens
+       sum(gen_ai_usage_total_tokens) as total_tokens,
+       sum(gen_ai_usage_cost) as total_cost
 FROM "default"
 WHERE gen_ai_request_model IS NOT NULL
 GROUP BY user_email, model
 ```
 
-Then drag the resulting fields (`user_email`, `model`, `requests`, `input_tokens`, `output_tokens`, `total_tokens`) from the left field list into **First Column** / **Other Columns**, and click **Apply** → **Save**. This gives a live, per-user breakdown of token usage and request counts across every model — the core "who is using how much" view for the demo.
+Drag the resulting fields into **First Column** / **Other Columns**, then **Apply → Save**. This is the "who is using how much, and what is it costing" view — the core payoff of the demo.
+
+## Known gaps (say these on camera rather than hide them)
+
+- SLOs are missing from this OpenObserve build's UI (see Step 1).
+- The `ReelDrop Support` model's accuracy on questions the docs don't cover is honest but blunt — it says it doesn't know rather than guessing (by design, from the system prompt).
+- Running on the VM's CPU, prompt prefill on the first request after a model reload can take 20–30 seconds even after the context-window fix — subsequent requests are fast because Ollama caches the prompt prefix (`llm_ollama_chat_prompt_eval_cached_count` in the trace shows this).
 
 Reference docs used in this guide:
 - OpenObserve quickstart: https://openobserve.ai/docs/quickstart/
@@ -151,4 +211,4 @@ Reference docs used in this guide:
 - OpenObserve No-Code AI (Open WebUI): https://openobserve.ai/docs/integration/ai/no-code/openwebui/
 - LiteLLM OpenTelemetry integration: https://docs.litellm.ai/docs/observability/opentelemetry_integration
 - LiteLLM Ollama provider: https://docs.litellm.ai/docs/providers/ollama
-- OpenObserve dashboards & custom SQL panels: https://openobserve.ai/docs/
+- Ollama context length / `num_ctx`: https://github.com/ollama/ollama/blob/main/docs/faq.md

@@ -8,6 +8,7 @@ services:
     environment:
       - ZO_ROOT_USER_EMAIL=itzmario133@gmail.com
       - ZO_ROOT_USER_PASSWORD=Demo@Observe123
+      - ZO_SLO_ENABLED=true
     volumes:
       - openobserve_data:/data
 
