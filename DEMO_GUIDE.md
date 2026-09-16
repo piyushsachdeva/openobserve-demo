@@ -77,6 +77,7 @@ model_list:
       model: ollama_chat/qwen2.5:1.5b
       api_base: http://187.77.187.85:11434
       num_ctx: 8192
+      temperature: 0
 
 litellm_settings:
   callbacks: ["otel"]
@@ -96,6 +97,8 @@ The `user_header_mappings` block is what makes traces per-user: it tells LiteLLM
 curl http://187.77.187.85:11434/api/ps
 ```
 Look for `"context_length"` in the response — if it's `4096`, the fix didn't take (usually because the model was already loaded before you restarted the proxy; unload it first with `curl -X POST http://187.77.187.85:11434/api/generate -d '{"model": "qwen2.5:1.5b", "keep_alive": 0}'` and let the next request reload it).
+
+**Second gotcha, found only after testing through the real Open WebUI chat (not curl):** setting "Temperature: Custom: 0.1" in Open WebUI's own model editor **does nothing** — traced requests confirmed Open WebUI never sends a `temperature` field to the API at all, so Ollama silently used its own high default regardless of what the UI showed. This is why curl tests against the proxy (which *did* include `temperature` in the payload) looked perfectly reliable while the actual chat kept flip-flopping between a correct answer and a fabricated one on the identical question. The fix has to live server-side — `temperature: 0` in the `litellm_params` above, same as `num_ctx` — so it applies regardless of what Open WebUI does or doesn't send.
 
 Run it:
 
@@ -142,9 +145,10 @@ The goal: a chat model that only answers from ReelDrop's actual docs/pricing/fea
    - Name: `ReelDrop Support`
    - Base Model: `qwen2.5:1.5b`
    - System Prompt: an instruction line ("Answer ONLY using the documentation below...") followed by the full contents of all 5 files concatenated.
-   - **Advanced Params → Temperature → Custom → `0.1`.** Default temperature made the model flip between a correct answer and a hallucinated one on the exact same question — grounding a small model needs low temperature, not just the right context in front of it.
+   - Temperature: leave on Default — it's enforced server-side (see the second gotcha in Step 3), the model editor's own setting doesn't reach the API.
+   - **Capabilities → uncheck "Builtin Tools".** Left on (the default), every real chat request silently attaches ~35 tool/function schemas — memory, calendar, notes, automations, knowledge search — none of which this demo uses. A model this small can't hold that plus the ReelDrop docs plus a straight answer at the same time; it degrades into fabricated answers ("up to 50 accounts", "free") indistinguishable from the context-window bug except that curl tests never reproduce it, because curl never sends those tool schemas either. Confirmed by inspecting the actual traced request: `llm_request_functions_0` through `llm_request_functions_34` were present with Builtin Tools on, gone with it off.
    - Do **not** attach a Knowledge collection to this model (see above — it doesn't help and adds risk of confusing the small model further).
-3. Save. Select the model in a new chat and ask something the docs actually cover, e.g. *"How many Instagram accounts can I connect on the Creator plan, and what does it cost?"* — correct answer: **up to 5 accounts, $29/month or $149/year**.
+3. Save. Select the model in a **new** chat (capability changes don't apply retroactively to already-open chats) and ask something the docs actually cover, e.g. *"How many Instagram accounts can I connect on the Creator plan, and what does it cost?"* — correct answer: **up to 5 accounts, $29/month or $149/year**. Verified twice in a row through the actual browser chat, on two different questions, after all three fixes above.
 
 If you want to demo a *stale knowledge base* failure mode instead of a working support agent, that's a separate, deliberate scenario — see the git history for the `openobserve-demo` repo's earlier support-widget prototype (not part of this stack) for how that was built with a genuinely conflicting pair of documents.
 
@@ -204,6 +208,7 @@ Drag the resulting fields into **First Column** / **Other Columns**, then **Appl
 - SLOs are missing from this OpenObserve build's UI (see Step 1).
 - The `ReelDrop Support` model's accuracy on questions the docs don't cover is honest but blunt — it says it doesn't know rather than guessing (by design, from the system prompt).
 - Running on the VM's CPU, prompt prefill on the first request after a model reload can take 20–30 seconds even after the context-window fix — subsequent requests are fast because Ollama caches the prompt prefix (`llm_ollama_chat_prompt_eval_cached_count` in the trace shows this).
+- Don't trust a curl test against the LiteLLM proxy as proof the chat model works end-to-end — it isn't the same request Open WebUI actually sends (see the temperature and Builtin Tools gotchas above). The only real verification is asking the question in the actual browser chat, in a genuinely new chat, more than once.
 
 Reference docs used in this guide:
 - OpenObserve quickstart: https://openobserve.ai/docs/quickstart/

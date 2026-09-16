@@ -8,6 +8,7 @@ model_list:
       model: ollama_chat/qwen2.5:1.5b
       api_base: http://187.77.187.85:11434
       num_ctx: 8192
+      temperature: 0
 
 litellm_settings:
   callbacks: ["otel"]
