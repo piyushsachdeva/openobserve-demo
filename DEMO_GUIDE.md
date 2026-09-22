@@ -2,13 +2,6 @@
 
 Stack: **Ollama** (on the VM) → **LiteLLM Proxy** (adds tracing) → **Open WebUI** (multi-user chat, with a ReelDrop-aware custom model), traces land in **OpenObserve**.
 
-## Fastest way
-
-```bash
-docker compose up -d
-```
-
-That's it — skip to "Verify" below. The rest of this guide is the manual, step-by-step version in case you want to deploy each piece by hand.
 
 ## Prerequisites
 
