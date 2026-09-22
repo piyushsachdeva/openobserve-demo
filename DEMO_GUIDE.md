@@ -26,36 +26,17 @@ That's it — skip to "Verify" below. The rest of this guide is the manual, step
 
 ## Step 1 — Start OpenObserve
 
-Docs: https://openobserve.ai/docs/quickstart/
-
-```bash
-docker run -d --name openobserve \
-  -v $PWD/openobserve_data:/data \
-  -p 5080:5080 \
-  -e ZO_ROOT_USER_EMAIL="itzmario133@gmail.com" \
-  -e ZO_ROOT_USER_PASSWORD="Demo@Observe123" \
-  public.ecr.aws/zinclabs/openobserve:latest
-```
-
-Open http://localhost:5080/web/login and confirm you can log in.
-
-**No Docker?** Run it as a standalone binary instead — download from https://openobserve.ai/downloads, then:
+Run it as a standalone binary instead — download from https://openobserve.ai/downloads, then:
 
 ```bash
 chmod +x openobserve
-ZO_ROOT_USER_EMAIL="itzmario133@gmail.com" ZO_ROOT_USER_PASSWORD="Demo@Observe123" ./openobserve
+ZO_ROOT_USER_EMAIL="piyush@techtutorialswithpiyush.com" ZO_ROOT_USER_PASSWORD="Demo@Observe123" ./openobserve
 ```
-
-Two gotchas, verified by testing this directly:
-- **Password policy:** the binary rejects weak passwords (needs upper+lower+digit+special char) and panics on startup if it doesn't pass — `Demo@Observe123` above already satisfies this.
-- **Changing ports:** if you need a non-default HTTP port, also set `ZO_GRPC_PORT` — it defaults to `5081` independently of `ZO_HTTP_PORT`, and leaving it unset causes an internal port collision when you move HTTP onto `5081`.
-
-**Known gap:** SLOs don't appear in this build's UI even with `ZO_SLO_ENABLED=true` set (verified — the API confirms the flag is on, but no SLO menu renders, checked on both the open-source and Enterprise binaries). Skip that stop in the platform tour or mention it as an honest limit.
 
 ## Step 2 — Get your OpenObserve auth token
 
 ```bash
-echo -n 'itzmario133@gmail.com:Demo@Observe123' | base64
+echo -n 'piyush@techtutorialswithpiyush.com:Demo@Observe123' | base64
 ```
 
 Save the output — you'll need it as `Basic <token>`.
@@ -203,8 +184,7 @@ GROUP BY user_email, model
 
 Drag the resulting fields into **First Column** / **Other Columns**, then **Apply → Save**. This is the "who is using how much, and what is it costing" view — the core payoff of the demo.
 
-## Known gaps (say these on camera rather than hide them)
-
+## Known gaps 
 - SLOs are missing from this OpenObserve build's UI (see Step 1).
 - The `ReelDrop Support` model's accuracy on questions the docs don't cover is honest but blunt — it says it doesn't know rather than guessing (by design, from the system prompt).
 - Running on the VM's CPU, prompt prefill on the first request after a model reload can take 20–30 seconds even after the context-window fix — subsequent requests are fast because Ollama caches the prompt prefix (`llm_ollama_chat_prompt_eval_cached_count` in the trace shows this).
