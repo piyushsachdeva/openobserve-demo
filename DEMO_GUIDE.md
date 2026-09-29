@@ -29,7 +29,7 @@ ZO_ROOT_USER_EMAIL="piyush@techtutorialswithpiyush.com" ZO_ROOT_USER_PASSWORD="D
 ## Step 2 — Get your OpenObserve auth token
 
 ```bash
-echo -n 'piyush@techtutorialswithpiyush.com:Demo@Observe123' | base64
+echo -n 'root@example.com:Complexpass#123' | base64
 ```
 
 Save the output — you'll need it as `Basic <token>`.
