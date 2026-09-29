@@ -24,6 +24,7 @@ services:
       - ./litellm-config.yaml:/app/config.yaml
     environment:
       - OLLAMA_API_BASE=http://187.77.187.85:11434
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - OTEL_EXPORTER=otlp_http
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://openobserve:5080/api/default
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/json
@@ -41,7 +42,7 @@ services:
       - "3001:8080"
     environment:
       - OPENAI_API_BASE_URL=http://litellm-proxy:4000/v1
-      - OPENAI_API_KEY=sk-1234
+      - OPENAI_API_KEY=${LITELLM_MASTER_KEY}
       - WEBUI_AUTH=true
       - ENABLE_FORWARD_USER_INFO_HEADERS=True
     volumes:
