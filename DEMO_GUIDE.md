@@ -36,6 +36,8 @@ Save the output — you'll need it as `Basic <token>`.
 
 ## Step 3 — Start LiteLLM Proxy (this is what adds tracing)
 
+LiteLLM is an open-source AI gateway and proxy server that gives developers a single, OpenAI-compatible API to call over 100 large language model (LLM) providers
+
 Docs: https://docs.litellm.ai/docs/observability/opentelemetry_integration and https://docs.litellm.ai/docs/providers/ollama
 
 `litellm-config.yaml` (already in this repo):
@@ -109,8 +111,6 @@ docker run -d --name open-webui \
 ## Step 5 — Give it ReelDrop's knowledge (the "customer support agent" part)
 
 The goal: a chat model that only answers from ReelDrop's actual docs/pricing/features, so it can act as a support agent for the demo.
-
-**What did NOT work:** attaching a Workspace → Knowledge collection to the model and letting Open WebUI's RAG pipeline retrieve context automatically. A model this small (0.5B–1.5B) doesn't reliably invoke Open WebUI's native-function-calling retrieval tool, so the knowledge base was silently never consulted — the model answered from its own pretraining instead (fabricated ReelDrop prices).
 
 **What worked:** paste the docs directly into the model's **System Prompt**, verbatim, as one block. At ~17KB / ~4,300 tokens this comfortably fits `qwen2.5:1.5b`'s 8192-token context (once fixed per the Step 3 gotcha) with room left for the question and answer.
 
