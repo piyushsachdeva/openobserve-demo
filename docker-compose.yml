@@ -6,8 +6,8 @@ services:
     ports:
       - "5080:5080"
     environment:
-      - ZO_ROOT_USER_EMAIL=itzmario133@gmail.com
-      - ZO_ROOT_USER_PASSWORD=Demo@Observe123
+      - ZO_ROOT_USER_EMAIL=${ZO_ROOT_USER_EMAIL}
+      - ZO_ROOT_USER_PASSWORD=${ZO_ROOT_USER_PASSWORD}
       - ZO_SLO_ENABLED=true
     volumes:
       - openobserve_data:/data
@@ -23,12 +23,12 @@ services:
     volumes:
       - ./litellm-config.yaml:/app/config.yaml
     environment:
-      - OLLAMA_API_BASE=http://187.77.187.85:11434
+      - OLLAMA_API_BASE=http://<OLLAMA_HOST>:11434
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - OTEL_EXPORTER=otlp_http
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://openobserve:5080/api/default
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/json
-      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic aXR6bWFyaW8xMzNAZ21haWwuY29tOkRlbW9AT2JzZXJ2ZTEyMw==
+      - OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic ${OPENOBSERVE_BASIC_TOKEN}
       - OTEL_SERVICE_NAME=litellm-proxy
     command: ["--config", "/app/config.yaml", "--port", "4000"]
 
